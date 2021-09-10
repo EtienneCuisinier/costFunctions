@@ -17,12 +17,12 @@ plt.style.use('seaborn-whitegrid')
 class costFunctions:
         
     def __init__(self,loc, nameDataOrignal, nameData364Days, nameConfig, nameSettings, namePLAN, nameFbsfLog, nameSortie, storageID, lossesID, efficiencyID, initSocID, finalSocID, capacityID, powerID, costID, week=False, day=False, nbPeriods=-1):
-		"""Author: Etienne Cuisinier (etienne.cuisinier@cea.fr)"""
+        """Author: Etienne Cuisinier (etienne.cuisinier@cea.fr)"""
         os.chdir(os.path.dirname(os.path.realpath(__file__)))
         periodSets=[]
 
         ##################### 1.0) Cutting the data series into 13 periods of 4 weeks ('month') or customized
-        dfData=pd.read_csv(loc+nameData364Days,sep=',')
+        dfData=pd.read_csv(loc+nameData364Days,sep=';')
         col=dfData.columns
         dateTime=dfData[col[0]]
         dfData=dfData.reindex(columns=list(dfData.columns[1:]))
@@ -125,9 +125,9 @@ class costFunctions:
                 print("Computing representative period",str(period),"of periods of length",str(len(self.periodSets[periodSet][0])))
                 
                 if len(self.periodSets[periodSet][0])==24: 
-                    rp=representPeriods(data, dt, 1, 1, nBins, timeLimit=timeLimitRp, gap=gap, threads=threads, imposedPeriod=imposedPeriod, imposePeak=imposePeak, binMethod=binMethod, seriesToConsider=seriesToConsider)  
+                    rp=representativePeriods(data, dt, 1, 1, nBins, timeLimit=timeLimitRp, gap=gap, threads=threads, imposedPeriod=imposedPeriod, imposePeak=imposePeak, binMethod=binMethod, seriesToConsider=seriesToConsider)  
                 else:
-                    rp=representPeriods(data, dt, nRP, sRP, nBins, timeLimit=timeLimitRp, gap=gap, threads=threads, imposedPeriod=imposedPeriod, imposePeak=imposePeak, binMethod=binMethod, seriesToConsider=seriesToConsider)  
+                    rp=representativePeriods(data, dt, nRP, sRP, nBins, timeLimit=timeLimitRp, gap=gap, threads=threads, imposedPeriod=imposedPeriod, imposePeak=imposePeak, binMethod=binMethod, seriesToConsider=seriesToConsider)  
                 current.append(rp)
                 
             allPeriodsRp.append(current)
@@ -213,7 +213,7 @@ class costFunctions:
                     currentRp=self.allPeriodsRp[periodSet][period]
                     name='\\'+self.nameDataOrignal+'_'+str(self.allPeriodsRp[periodSet][period].nbPdt)+'_period'+str(period)+'_rp'+str(rp)+'.csv'
                 
-                    writeRp(dataPersee,currentRp,self.listPeriods,self.dt,self.loc+'//representPeriods',name,noRp=rp)
+                    writeRp(dataPersee,currentRp,self.listPeriods,self.dt,self.loc+'//representativePeriods',name,noRp=rp)
                                     
                 #computation of the operational cost for each storage delta
                 originalPoints=[]
@@ -236,7 +236,7 @@ class costFunctions:
                     ignoredPointWeights=[] #if one of the representative period yield an unfeasible problem, its weight is recorded to further ajust the final cost 
 
                     for rp in range(self.allPeriodsRp[periodSet][period].nRP):
-                        name='representPeriods/'+self.nameDataOrignal[1:]+'_'+str(self.allPeriodsRp[periodSet][period].nbPdt)+'_period'+str(period)+'_rp'+str(rp)+'.csv'
+                        name='representativePeriods/'+self.nameDataOrignal[1:]+'_'+str(self.allPeriodsRp[periodSet][period].nbPdt)+'_period'+str(period)+'_rp'+str(rp)+'.csv'
                         configuration.changeParamValue(self.nameDataOrignal[1:], './'+name)
             
                         #writing Persee files
