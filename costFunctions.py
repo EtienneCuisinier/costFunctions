@@ -374,15 +374,15 @@ class costFunctions:
     def showRp(self, rebuildMethod='basic',periodSet=0, period=-1):
         
         if period >= 0 and period < len(self.allPeriodsRp[periodSet]):
-            print("m=",period)
+            print("period=",period)
             self.allPeriodsRp[periodSet][period].showRp()
             self.allPeriodsRp[periodSet][period].showDcRp()
             # self.allPeriodsRp[periodSet][period].rebuildData(rebuildMethod)
             # self.allPeriodsRp[periodSet][period].showRebuiltData()
             
         else:
-            for m in range(len(self.listPeriods)):
-                print("m=",m)
+            for period in range(len(self.listPeriods)):
+                print("period=",period)
                 self.allPeriodsRp[periodSet][period].showRp()
                 self.allPeriodsRp[periodSet][period].showDcRp()
                 # self.allPeriodsRp[periodSet][period].rebuildData(rebuildMethod)
