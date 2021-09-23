@@ -106,7 +106,7 @@ class costFunctions:
         self.nbPeriods=nbPeriods
         self.sizePeriods=len(dateTime)/nbPeriods
 
-    def computeRp(self, dt=1, nRP=1, sRP=1, nBins=40, imposedPeriod=[], imposePeak=[], binMethod=1, timeLimitRp=60, gap=0.0001, threads=8, seriesToConsider=[], weightsOnDataSets=[]):
+    def computeRp(self, dt=1, nRP=1, sRP=1, nBins=40, imposedPeriod=[], imposePeak=[], binMethod=1, timeLimitRp=60, gap=0.0001, threads=8, weightsOnDataSets=[]):
           
         allPeriodsRp=[]
         
@@ -125,9 +125,9 @@ class costFunctions:
                 print("Computing representative period",str(period),"of periods of length",str(len(self.periodSets[periodSet][0])))
                 
                 if len(self.periodSets[periodSet][0])==24: 
-                    rp=representativePeriods(data, dt, 1, 1, nBins, timeLimit=timeLimitRp, gap=gap, threads=threads, imposedPeriod=imposedPeriod, imposePeak=imposePeak, binMethod=binMethod, seriesToConsider=seriesToConsider)  
+                    rp=representativePeriods(data, dt, 1, 1, nBins, timeLimit=timeLimitRp, gap=gap, threads=threads, imposedPeriod=imposedPeriod, imposePeak=imposePeak, binMethod=binMethod)  
                 else:
-                    rp=representativePeriods(data, dt, nRP, sRP, nBins, timeLimit=timeLimitRp, gap=gap, threads=threads, imposedPeriod=imposedPeriod, imposePeak=imposePeak, binMethod=binMethod, seriesToConsider=seriesToConsider, weightsOnDataSets=weightsOnDataSets)  
+                    rp=representativePeriods(data, dt, nRP, sRP, nBins, timeLimit=timeLimitRp, gap=gap, threads=threads, imposedPeriod=imposedPeriod, imposePeak=imposePeak, binMethod=binMethod, weightsOnDataSets=weightsOnDataSets)  
                 current.append(rp)
                 
             allPeriodsRp.append(current)
