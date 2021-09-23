@@ -11,7 +11,7 @@ class representativePeriods:
         The class is composed of the following attributes:
             
             Initialization parameters: 
-            - a list of the original data series (lists) to compress (must have the same length, the length must be a multiple of 24/dt): data
+            - a list of the original data sets (lists) to compress (must have the same length, the length must be a multiple of 24/dt): data
             - the time step size (in hours): dt
             - the number of representative periods to build: nRP
             - the size of the representative periods to build (expressed as a number of days): sRP
@@ -20,25 +20,25 @@ class representativePeriods:
             - the gap tolerance (maximum objective difference between the optimal solution and the obtained solution, 0.1% by default): gap
             - the bin construction method (1 by default): binMethod (changes the step definition)
             - optional representative period imposed by the user (a list of period numbers): imposedPeriod
-            - optional peak representative periods for each data serie, defined for representative days only (for instance, [0,-1,1] means: [no period imposed,impose the period with lowest value, imposed the period with highest value]): imposePeak
+            - optional peak representative periods for each data sets, defined for representative days only (for instance, [0,-1,1] means: [no period imposed,impose the period with lowest value, imposed the period with highest value]): imposePeak
             - the rebuild method: rebuildMethod ('basic' by default, or 'squared' or 'durationCurve')
-            - weigths on the input data series: all series are normalised when accounting for errors on duration curves or when rebuilding the whole data series. Weights can be attributed.
+            - weigths on the input data sets: all sets are normalised when accounting for errors on duration curves or when rebuilding the whole data set. Weights can be attributed.
 
-            Internal parameters:
+            Other parameters and ouputs:
             - the number of data sets: nbSets
             - the number of time steps: nbPdt
             - the number of optional representative periods: nORP
-            - he size of the representative periods to build (expressed in hours): sRPh
+            - the size of the representative periods to build in hours: sRPh
             - the bins: bins
-            - the parameters L (methodological parameter): paramL
-            - the parameters AA (methodological parameter): paramAA
-            - a model (mp model from docplex): mdl
+            - the parameters L (see Poncelet K. & al.): paramL
+            - the parameters AA (see Poncelet K. & al.): paramAA
+            - an mathematical programming model (mp model from docplex): mdl
             - the optimised objective: objective
-            - the optimised weights: optWeights
-            - the optimised weights, compact version: optWeightsCompact
-            - the optimised weights per time step: optWeightsDt
-            - the optimised selected periods: optSelPeriods
-            - the optimised selected periods, compact version: optSelPeriodsCompact
+            - the optimal weights (for each optional representative period) : optWeights
+            - the optimal weights, compact version (only for selected periods): optWeightsCompact
+            - the optimal weights per time step: optWeightsDt
+            - the selected periods (1 if selected, 0 otherwise): optSelPeriods
+            - the selected periods, number of selected periods: optSelPeriodsCompact
             - the optimised selected periods per time step: optSelPeriodsDt
             - the optimised error on data: optError
             - the optimised total error: optErrorTot
@@ -55,12 +55,12 @@ class representativePeriods:
     
  
     
-    def __init__(self, data, dt, nRP, sRP, nBins=40, timeLimit=60, gap=0.001, threads=0, imposedPeriod=[], imposePeak=[], binMethod=1, weightsOnSeries=[]):
+    def __init__(self, data, dt, nRP, sRP, nBins=40, timeLimit=60, gap=0.001, threads=0, imposedPeriod=[], imposePeak=[], binMethod=1, weightsOnDataSets=[]):
         
         try: data[0][0]
         except: data=[data]     
         
-        #normalising data series
+        #normalising data sets
         maxi=[]
         for i in range(len(data)):
             maxi.append(max(data[i]))
@@ -147,10 +147,10 @@ class representativePeriods:
             totalError = 0
             i=0
             for n in range (nbSets):
-                if weightsOnSeries==[]:
+                if weightsOnDataSets==[]:
                     totalError += mdl.sum_vars(error[n][i] for i in setBins)  
                 else:
-                    totalError += mdl.sum_vars(error[n][i] for i in setBins)*weightsOnSeries[i]
+                    totalError += mdl.sum_vars(error[n][i] for i in setBins)*weightsOnDataSets[i]
                     i+=1
              
             mdl.minimize(totalError)
@@ -166,7 +166,7 @@ class representativePeriods:
         except:
             print('Error when solving problem')
         else:
-            #de-normalising data series
+            #de-normalising data sets
             for i in range(len(data)):
                 data[i]=[data[i][j]*maxi[i] for j in range(len(data[i]))]
             
@@ -288,13 +288,13 @@ class representativePeriods:
             self.rpUseHourly=None
             self.errorRebuiltData=None
             
-            self.weightsOnSeries=weightsOnSeries
+            self.weightsOnDataSets=weightsOnDataSets
     
             
     def showDcRp (self,save=False,name=''):
     
         for i in range(self.nbSets):
-            if self.weightsOnSeries[i]>0 or self.weightsOnSeries==[]:
+            if self.weightsOnDataSets[i]>0 or self.weightsOnDataSets==[]:
                 print ('Showing duration curves for data['+str(i)+']')
                 
                 print ('Compare duration curve of original data with (approximated) duration curve of selected representative periods (weighted)')
@@ -315,7 +315,7 @@ class representativePeriods:
     def showRp (self):
 
         for i in range(self.nbSets):
-            if self.weightsOnSeries[i]>0 or self.weightsOnSeries==[]:
+            if self.weightsOnDataSets[i]>0 or self.weightsOnDataSets==[]:
                 print ('Showing representative period(s) for data['+str(i)+']')
                     
                 for j in range( len(self.rpList[i])):
@@ -335,7 +335,7 @@ class representativePeriods:
     def showDcRebuiltData (self,save=False, name=''):
     
         for i in range(self.nbSets):
-            if self.weightsOnSeries[i]>0 or self.weightsOnSeries==[]:
+            if self.weightsOnDataSets[i]>0 or self.weightsOnDataSets==[]:
                 print ('Showing duration curves for data['+str(i)+']')
                 
                 print ('Compare duration curve of original data with (approximated) duration curve of rebuilt data')
@@ -356,7 +356,7 @@ class representativePeriods:
     def showRebuiltData (self,save=False, name=''):
     
         for i in range(self.nbSets):
-            if self.weightsOnSeries[i]>0 or self.weightsOnSeries==[]:
+            if self.weightsOnDataSets[i]>0 or self.weightsOnDataSets==[]:
                 print ('For data['+str(i)+']')
                 
                 print ('Compare duration curve of original data with duration curve of rebuilt data')
@@ -381,7 +381,7 @@ class representativePeriods:
         rpUseHourly=[]
         errorRebuiltData=[]
         
-        #normalising data series
+        #normalising data sets
         maxi=[]
         dataNorm=[self.data[i].copy for i in range(len(self.data))]
         for i in range(len(dataNorm)):
@@ -457,10 +457,10 @@ class representativePeriods:
                                 error[n] = error[n] + abs(dcRp[l] - dcOriginal[l])
                         
                         #accounting for the error on the current data set in the total error (with possible attributed weights)
-                        if self.weightsOnSeries==[]:
+                        if self.weightsOnDataSets==[]:
                             errorTot = errorTot + error[n]
                         else:
-                            errorTot = errorTot + error[n]*self.weightsOnSeries[weightIndex]
+                            errorTot = errorTot + error[n]*self.weightsOnDataSets[weightIndex]
                             weightIndex += 1
 
                     #update best candidate
