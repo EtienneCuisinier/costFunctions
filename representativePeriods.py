@@ -22,7 +22,8 @@ class representativePeriods:
             - optional representative period imposed by the user (a list of period numbers): imposedPeriod
             - optional peak representative periods for each data serie, defined for representative days only (for instance, [0,-1,1] means: [no period imposed,impose the period with lowest value, imposed the period with highest value]): imposePeak
             - the rebuild method: rebuildMethod ('basic' by default, or 'squared' or 'durationCurve')
-            
+            - weigths on the input data series: all series are normalised when accounting for errors on duration curves or when rebuilding the whole data series. Weights can be attributed.
+
             Internal parameters:
             - the number of data sets: nbSets
             - the number of time steps: nbPdt
@@ -54,18 +55,18 @@ class representativePeriods:
     
  
     
-    def __init__(self, data, dt, nRP, sRP, nBins=40, timeLimit=60, gap=0.001, threads=0, imposedPeriod=[], imposePeak=[], binMethod=1, seriesToConsider=[]):
+    def __init__(self, data, dt, nRP, sRP, nBins=40, timeLimit=60, gap=0.001, threads=0, imposedPeriod=[], imposePeak=[], binMethod=1, weightsOnSeries=[]):
         
         try: data[0][0]
         except: data=[data]     
         
-        #Normalising data series
+        #normalising data series
         maxi=[]
         for i in range(len(data)):
             maxi.append(max(data[i]))
             data[i]=[data[i][j]/maxi[i] for j in range(len(data[i]))]
         
-        #Building parameters
+        #building parameters
         try:
             nbSets=len(data)
             nbPdt=len(data[0])
@@ -96,14 +97,14 @@ class representativePeriods:
         except:
             print('ERROR when building parameters')
         
-        #Model
+        #model
         mdl = Model(name='representPeriods')
         mdl.parameters.mip.tolerances.mipgap=gap            
         mdl.set_time_limit(float(timeLimit))  
         if threads > 0:
             mdl.context.cplex_parameters.threads = threads
 
-        #Variables
+        #variables
         try:
            selected=mdl.binary_var_dict(setORP, name="u")
            weights=mdl.continuous_var_dict(setORP, lb=0, name="w")
@@ -114,7 +115,7 @@ class representativePeriods:
         except:
             print('Error when defining variables')
 
-        #Constraints
+        #constraints
         try:
             mdl.add_constraint( mdl.sum_vars(selected[i] for i in setORP) == nRP )
             mdl.add_constraint( mdl.sum_vars(weights[i] for i in setORP) == totWeight )
@@ -138,15 +139,19 @@ class representativePeriods:
                 mdl.add_constraint( selected[imposedPeriod[i]] == 1 )
             
             if len(imposePeak)>0:
-                for n in range(nbSets):
+                for n in range(len(peaks)):
                     if (peaks[n]>0):
                         mdl.add_constraint( selected[peaks[n]] == 1 )
                 
-            #Objective 
+            #objective 
             totalError = 0
-            for n in range(nbSets):
-                if n in seriesToConsider or seriesToConsider==[]:
-                    totalError += mdl.sum_vars(error[n][i] for i in setBins)   
+            i=0
+            for n in range (nbSets):
+                if weightsOnSeries==[]:
+                    totalError += mdl.sum_vars(error[n][i] for i in setBins)  
+                else:
+                    totalError += mdl.sum_vars(error[n][i] for i in setBins)*weightsOnSeries[i]
+                    i+=1
              
             mdl.minimize(totalError)
         except:
@@ -168,7 +173,7 @@ class representativePeriods:
             
             print (mdl.solve_details) 
         
-            #Gather results
+            #gather results
             optSelPeriods = [selected[i].solution_value for i in setORP]
             optSelPeriodsCompact = [i for i in setORP if selected[i].solution_value == 1]
 
@@ -227,7 +232,7 @@ class representativePeriods:
                         rpList[n].append([])
                     rpList[n][period].append(rp[n][i])
                     
-            #filtre des poids 
+            #filtering obtained weights (close to zero values given by the optimizer are excluded) 
             count=nRP
             optWeightsTemp=[]
             for i in range(len(optWeights)): 
@@ -276,19 +281,20 @@ class representativePeriods:
             self.peaks = peaks
             self.rp = rp
             self.rpList = rpList
-            self.seriesToConsider=seriesToConsider
             
             self.rebuiltData=None
             self.lMatrix=None
             self.rpUse=None
             self.rpUseHourly=None
             self.errorRebuiltData=None
+            
+            self.weightsOnSeries=weightsOnSeries
     
             
     def showDcRp (self,save=False,name=''):
     
         for i in range(self.nbSets):
-            if i in self.seriesToConsider or self.seriesToConsider==[]:
+            if self.weightsOnSeries[i]>0 or self.weightsOnSeries==[]:
                 print ('Showing duration curves for data['+str(i)+']')
                 
                 print ('Compare duration curve of original data with (approximated) duration curve of selected representative periods (weighted)')
@@ -309,7 +315,7 @@ class representativePeriods:
     def showRp (self):
 
         for i in range(self.nbSets):
-            if i in self.seriesToConsider or self.seriesToConsider==[]:
+            if self.weightsOnSeries[i]>0 or self.weightsOnSeries==[]:
                 print ('Showing representative period(s) for data['+str(i)+']')
                     
                 for j in range( len(self.rpList[i])):
@@ -329,7 +335,7 @@ class representativePeriods:
     def showDcRebuiltData (self,save=False, name=''):
     
         for i in range(self.nbSets):
-            if i in self.seriesToConsider or self.seriesToConsider==[]:
+            if self.weightsOnSeries[i]>0 or self.weightsOnSeries==[]:
                 print ('Showing duration curves for data['+str(i)+']')
                 
                 print ('Compare duration curve of original data with (approximated) duration curve of rebuilt data')
@@ -350,7 +356,7 @@ class representativePeriods:
     def showRebuiltData (self,save=False, name=''):
     
         for i in range(self.nbSets):
-            if i in self.seriesToConsider or self.seriesToConsider==[]:
+            if self.weightsOnSeries[i]>0 or self.weightsOnSeries==[]:
                 print ('For data['+str(i)+']')
                 
                 print ('Compare duration curve of original data with duration curve of rebuilt data')
@@ -374,6 +380,13 @@ class representativePeriods:
         rpUse=[]
         rpUseHourly=[]
         errorRebuiltData=[]
+        
+        #normalising data series
+        maxi=[]
+        dataNorm=[self.data[i].copy for i in range(len(self.data))]
+        for i in range(len(dataNorm)):
+            maxi.append(max(dataNorm[i]))
+            dataNorm[i]=[dataNorm[i][j]/maxi[i] for j in range(len(dataNorm[i]))]
     
         for n in range(self.nbSets):
             if n > 0:
@@ -410,45 +423,51 @@ class representativePeriods:
             #checking each optional representative period
             for k in range(self.nORP):
                 if (self.optWeights[k]>0):
-                    error=[0]
+                    error=[]
                     errorTot=0
                     countCompact=countCompact+1
                     #computing the error for each data set
+                    
+                    weightIndex=0
                     for n in range(self.nbSets):
-                        if n > 0:
-                            error.append(0)
+                        error.append(0)
 
-                        #Error metric to minimize
+                        #error metric to minimize
                         if rebuildMethod=='basic':
                
                             for l in range(self.sRPh):
-                                error[n] = error[n] + abs(self.data[n][int(i*self.sRPh+l)] - self.data[n][int(k*24/self.dt+l)])
+                                error[n] = error[n] + abs(dataNorm[n][int(i*self.sRPh+l)] - dataNorm[n][int(k*24/self.dt+l)])
                         
                         elif rebuildMethod=='squares':
                             for l in range(self.sRPh):
-                                error[n] = error[n] + (1+abs(self.data[n][int(i*self.sRPh+l)] - self.data[n][int(k*24/self.dt+l)]))*(1+abs(self.data[n][int(i*self.sRPh+l)] - self.data[n][int(k*24/self.dt+l)]))
+                                error[n] = error[n] + (1+abs(dataNorm[n][int(i*self.sRPh+l)] - dataNorm[n][int(k*24/self.dt+l)]))*(1+abs(dataNorm[n][int(i*self.sRPh+l)] - dataNorm[n][int(k*24/self.dt+l)]))
                         
                         elif rebuildMethod=='durationCurve':
                             dcRp=list()
                             dcOriginal=list()
                             
                             for l in range(self.sRPh):
-                                dcRp.append(self.data[n][int(k*24/self.dt+l)])
-                                dcOriginal.append(self.data[n][i*self.sRPh+l])
+                                dcRp.append(dataNorm[n][int(k*24/self.dt+l)])
+                                dcOriginal.append(dataNorm[n][i*self.sRPh+l])
     
                             dcRp.sort(reverse=True)
                             dcOriginal.sort(reverse=True)
     
                             for l in range(self.sRPh):
                                 error[n] = error[n] + abs(dcRp[l] - dcOriginal[l])
-                                    
-                        errorTot = errorTot + error[n]
-            
-                    #Update best candidate
+                        
+                        #accounting for the error on the current data set in the total error (with possible attributed weights)
+                        if self.weightsOnSeries==[]:
+                            errorTot = errorTot + error[n]
+                        else:
+                            errorTot = errorTot + error[n]*self.weightsOnSeries[weightIndex]
+                            weightIndex += 1
+
+                    #update best candidate
                     if (errorBest < 0 or errorTot < errorBest):
                         errorBest = errorTot
                         
-                        #Note representative period usage (per representative period)
+                        #note representative period usage (per representative period)
                         rpUse[k]+=1
                         if(previousK>-1):
                             rpUse[previousK]=rpUse[previousK]-1
@@ -458,30 +477,30 @@ class representativePeriods:
                             for n in range(self.nbSets):
                                 bestRp[n][m] = self.data[n][int(k*24/self.dt+m)]
     
-                            #Note representative period usage (per hour)
+                            #note representative period usage (per hour)
                             rpUseHourly[int(k*24/self.dt+m)]+=1
                             if(previousK>-1):
                                 rpUseHourly[int(previousK*24/self.dt+m)]-=1
                                       
-                            #Update matrix
+                            #update matrix
                             lMatrix[i*self.sRPh+m][countCompact*self.sRPh+m] = 1
                             if(countCompactPrevious > -1):
                                 lMatrix[i*self.sRPh+m][countCompactPrevious*self.sRPh+m] = 0
                         
-                            #Update list
+                            #update list
                             lList[i*self.sRPh+m] = k
                         
                         previousK=k
                         countCompactPrevious=countCompact
                                 
-            #Update our rebuilt data with representative periods
+            #update our rebuilt data with representative periods
             errorRebuiltData.append(errorBest)
             for n in range(self.nbSets):
                 for m in range(self.sRPh):
                     rebuiltData[n].append(bestRp[n][m])
                     
             
-            #Build the representative periods file for Persee
+            #build the representative periods file for Persee
             visualisationList=[]
             perseeList=lList.copy()
             #removing the '-1' which correspond to the left values if the size of representative periods is not a multiple of 365
@@ -497,7 +516,7 @@ class representativePeriods:
                 if i not in visualisationList: 
                     visualisationList.append(i)
                     
-            #Timeshifting to match with Pegase rolling horizon
+            #timeshifting to match with Pegase rolling horizon
             perseeList+=perseeList[0:timeshift]
             del perseeList[0:timeshift]
             perseeList=perseeList[len(perseeList)-1:len(perseeList)]+perseeList
@@ -511,6 +530,7 @@ class representativePeriods:
             self.lList=lList
             self.perseeList=perseeList
             self.visualisationList=visualisationList
+            
 
 def buildDc (data, weights=[]) :
 
