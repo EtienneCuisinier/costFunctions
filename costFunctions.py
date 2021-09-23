@@ -752,7 +752,7 @@ def readCfOneConverterState(nbPeriods,sizePeriods,loc,folder,nbPeriodSets):
 
         plt.show()     
                 
-	#extrapolated cost functions
+		#extrapolated cost functions
         for period in range(nbPeriods):
             allPeriodsWeightedFunctions[periodSet].append([])
             nextPeriod=period+1
