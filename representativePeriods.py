@@ -383,7 +383,7 @@ class representativePeriods:
         
         #normalising data sets
         maxi=[]
-        dataNorm=[self.data[i].copy for i in range(len(self.data))]
+        dataNorm=[ReprPeriods.data[i].copy() for i in range(len(ReprPeriods.data))]
         for i in range(len(dataNorm)):
             maxi.append(max(dataNorm[i]))
             dataNorm[i]=[dataNorm[i][j]/maxi[i] for j in range(len(dataNorm[i]))]
