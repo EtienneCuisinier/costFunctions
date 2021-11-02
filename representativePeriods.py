@@ -70,7 +70,8 @@ class representativePeriods:
         maxi=[]
         for i in range(len(data)):
             maxi.append(max(data[i]))
-            data[i]=[data[i][j]/maxi[i] for j in range(len(data[i]))]
+            if maxi[i] > 0:
+                data[i]=[data[i][j]/maxi[i] for j in range(len(data[i]))]
         
         #building parameters
         try:
