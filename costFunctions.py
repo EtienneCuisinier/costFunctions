@@ -18,7 +18,8 @@ class costFunctions:
     def __init__(self, periodSizes, seriesToConsider,
                  loc, nameData, nameConfig, nameSettings, namePLAN, nameFbsfLog, nameSortie, 
                  storageID, lossesID, efficiencyID, initSocID, finalSocID, capacityID, powerID, costID, 
-                 nbTimeStepsForComputations=8736, dt=1):
+                 nbTimeStepsForComputations=8736, dt=1,
+                 converterState=False):
                
         ##################### 0) Reading and formatting the data
         os.chdir(os.path.dirname(os.path.realpath(__file__)))
@@ -51,10 +52,16 @@ class costFunctions:
         try: periodSizes[0]
         except: periodSizes=[periodSizes]   
         
+        configuration=dataList(nameConfig,loc)
+        timeshift=float(configuration.findParamValue('<timeshift>',ignoreComments=True))
+        
+        allNbDaysInPeriod=[]
         periodSets=[]
 
-        for size in periodSizes:
-            nbPeriods=nbTimeSteps/size
+        for periodSet in range(len(periodSizes)):
+            
+            nbPeriods=nbTimeSteps/periodSizes[periodSet]
+            
             if nbPeriods % 1 > 0:
                 print("ERROR: the number of time steps in the data series used for computations must be a multiple of the periodSizes ")
             else:    
@@ -72,8 +79,11 @@ class costFunctions:
                     listPeriods.append(temp) 
                 periodSets.append(listPeriods)
             
+            nbDaysInPeriod=int(len(listPeriods[0])/timeshift)
+            allNbDaysInPeriod.append(nbDaysInPeriod)
+            
 
-        #Files locations and Persee files
+        #Files location and Persee files
         self.loc=loc
         self.nameData=nameData
         self.nameConfig=nameConfig
@@ -99,7 +109,13 @@ class costFunctions:
         self.nbSeries=len(periodSets[0][0][0])
         self.dt=dt
         self.seriesToConsider=seriesToConsider
-
+        
+        #Other parameters
+        self.converterState=converterState
+        self.configuration=configuration
+        self.allNbDaysInPeriod=allNbDaysInPeriod
+        self.timeshift=timeshift
+        
     def computeRp(self, nRP=1, sRP=1, weights=[], imposedPeriods=[], imposePeak=[], gapRp=0.0001, timeLimitRp=60, threadsRp=8, nBins=40, binMethod=1):          
         allPeriodsRp=[]
         
@@ -161,7 +177,7 @@ class costFunctions:
         self.sizeSto=sizeSto
         self.deltas=deltas
 
-    def computeCf(self, nameBatch, gap, timeLimit, initSOC, converterState=False, converterID='', absInitialStateID=''):
+    def computeCf(self, nameBatch, gap, timeLimit, initSOC, converterID='', absInitialStateID=''):
         self.cFmethod="basic"
         
         allPeriodsFunctions=[]
@@ -178,13 +194,12 @@ class costFunctions:
             dataPersee[0].tolist()
             
             #modification of the Persee configuration file
-            configuration=dataList(self.nameConfig,self.loc)
-            configuration.changeParamValue('futursize', str(len(self.allPeriodsRp[periodSet][0].rpList[0][0]))) 
-            configuration.changeParamValue('pastsize', '24') 
-            configuration.changeParamValue('timeshift', '24') 
-            configuration.changeParamValue('CycleStop', '1') 
-            configuration.commentParam('<TimeStepFile>') 
-            configuration.commentParam('<ComputationFuturSize>') 
+            self.configuration.changeParamValue('futursize', str(len(self.allPeriodsRp[periodSet][0].rpList[0][0]))) 
+            self.configuration.changeParamValue('pastsize', '24') 
+            self.configuration.changeParamValue('timeshift', '24') 
+            self.configuration.changeParamValue('CycleStop', '1') 
+            self.configuration.commentParam('<TimeStepFile>') 
+            self.configuration.commentParam('<ComputationFuturSize>') 
         
             #modification of the Persee settings file
             settings=dataList(self.nameSettings,self.loc)
@@ -195,7 +210,7 @@ class costFunctions:
             costs=[]
             costsOff=[]
 
-            if converterState:
+            if self.converterState:
                 settings.changeParamValue(converterID+absInitialStateID, '1')
             
             for period in range(len(self.allPeriodsRp[periodSet])):
@@ -231,11 +246,11 @@ class costFunctions:
 
                     for rp in range(self.allPeriodsRp[periodSet][period].nRP):
                         name='representativePeriods/'+self.nameData+'_'+str(self.allPeriodsRp[periodSet][period].nbPdt)+'_period'+str(period)+'_rp'+str(rp)+'.csv'
-                        configuration.changeParamValue(self.nameData, './'+name)
+                        self.configuration.changeParamValue(self.nameData, './'+name)
             
                         #writing Persee files
                         settings.writeFile()
-                        configuration.writeFile()
+                        self.configuration.writeFile()
             
                         #running Persee
                         timeSimulation=runPerseeBatch(self.loc,nameBatch,self.nameFbsfLog)
@@ -253,7 +268,7 @@ class costFunctions:
                             
                             #if the initial state of the converter has an important side effect on the operational cost 
                             #both initial state cases are computed to build two cost functions (and so that the cost to change the state is accounted only once)
-                            if converterState:
+                            if self.converterState:
                                
                                 #the other starting point is computed, if the obtained cost is inferior, both results are weighted
                                 settings.changeParamValue(converterID+absInitialStateID, '0')
@@ -282,7 +297,7 @@ class costFunctions:
                                         costOff=(originalCostOff + originalCost*(1/ratio-1))*self.allPeriodsRp[periodSet][period].optWeightsCompact[rp]/totalWeight   
                             
                             weightedCosts.append(cost)
-                            if converterState:
+                            if self.converterState:
                                 weightedCostsOff.append(costOff)
                             #     print("representative period "+str(rp)+" done, ON state, cost = "+str(cost)+", with weight = "+str(self.allPeriodsRp[periodSet][period].optWeightsCompact[rp]))
                             #     print("representative period "+str(rp)+" done, OFF state, cost = "+str(costOff)+", with weight = "+str(self.allPeriodsRp[periodSet][period].optWeightsCompact[rp]))
@@ -299,7 +314,7 @@ class costFunctions:
                         sumCostsOff=sum(weightedCostsOff)*coefAdjustWeights
                         originalPointsOff.append([self.deltas[periodSet][period][point],sumCostsOff])
 
-                        if converterState:
+                        if self.converterState:
                             print("Storage delta = ",self.deltas[periodSet][period][point], " done, corresponding cost (converter ON) = ", str(sumCosts))
                             print("Storage delta = ",self.deltas[periodSet][period][point], " done, corresponding cost (converter OFF) = ", str(sumCostsOff))
                         else:
@@ -324,15 +339,11 @@ class costFunctions:
         #restoring Persee files     
         settings.reinitData()
         settings.writeFile()
-        configuration.reinitData()
-        configuration.writeFile()
-        
+        self.configuration.reinitData()
+        self.configuration.writeFile()
 
         self.allPeriodsFunctions=allPeriodsFunctions
         self.allPeriodsFunctionsOff=allPeriodsFunctionsOff
-
-        self.configuration=configuration
-        self.converterState=converterState
         
         timeTot=time.perf_counter() - timeStart
         print("Total computation time: ",timeTot," seconds")
@@ -340,13 +351,13 @@ class costFunctions:
     def extrapolateCf(self,absTolerance=5):
         timeStart=time.perf_counter()
         
-        output=extrapolateCfOneConverterState(self.allPeriodsFunctions,self.periodSets,self.configuration,absTolerance=absTolerance)
+        output=extrapolateCfOneConverterState(self.allPeriodsFunctions,self.periodSets,self.timeshift,absTolerance=absTolerance)
 
         self.allPeriodsWeightedFunctions=output[0]
         self.allNbDaysInPeriod=output[1]
         
         if self.converterState:
-            output=extrapolateCfOneConverterState(self.allPeriodsFunctionsOff,self.periodSets,self.configuration,absTolerance=absTolerance)
+            output=extrapolateCfOneConverterState(self.allPeriodsFunctionsOff,self.periodSets,self.timeshift,absTolerance=absTolerance)
                 
             self.allPeriodsWeightedFunctionsOff=output[0]
                  
@@ -356,15 +367,15 @@ class costFunctions:
     def writeCf(self,ref=''):
         
         if self.converterState:                      
-            writeCfOneConverterState(self.allPeriodsFunctions,self.allPeriodsWeightedFunctions,self.periodSets,self.allNbDaysInPeriod,self.storageID,self.loc,'\SeasonalCostsOn\\')
-            writeCfOneConverterState(self.allPeriodsFunctions,self.allPeriodsWeightedFunctions,self.periodSets,self.allNbDaysInPeriod,self.storageID,self.loc,'\SeasonalCosts\\')
-            writeCfOneConverterState(self.allPeriodsFunctionsOff,self.allPeriodsWeightedFunctionsOff,self.periodSets,self.allNbDaysInPeriod,self.storageID,self.loc,'\SeasonalCostsOff\\')
+            writeCfOneConverterState(self.allPeriodsFunctions,self.allPeriodsWeightedFunctions,self.periodSets,self.allNbDaysInPeriod,self.storageID,self.loc,'\CostFunctions-On\\')
+            writeCfOneConverterState(self.allPeriodsFunctions,self.allPeriodsWeightedFunctions,self.periodSets,self.allNbDaysInPeriod,self.storageID,self.loc,'\CostFunctions\\')
+            writeCfOneConverterState(self.allPeriodsFunctionsOff,self.allPeriodsWeightedFunctionsOff,self.periodSets,self.allNbDaysInPeriod,self.storageID,self.loc,'\CostFunctions-Off\\')
             if ref !='':
-                writeCfOneConverterState(self.allPeriodsFunctions,self.allPeriodsWeightedFunctions,self.periodSets,self.allNbDaysInPeriod,self.storageID,self.loc,'\\'+ref+'_On\\')
-                writeCfOneConverterState(self.allPeriodsFunctionsOff,self.allPeriodsWeightedFunctionsOff,self.periodSets,self.allNbDaysInPeriod,self.storageID,self.loc,'\\'+ref+'_Off\\')
+                writeCfOneConverterState(self.allPeriodsFunctions,self.allPeriodsWeightedFunctions,self.periodSets,self.allNbDaysInPeriod,self.storageID,self.loc,'\\'+ref+'-On\\')
+                writeCfOneConverterState(self.allPeriodsFunctionsOff,self.allPeriodsWeightedFunctionsOff,self.periodSets,self.allNbDaysInPeriod,self.storageID,self.loc,'\\'+ref+'-Off\\')
                 
         else:
-            writeCfOneConverterState(self.allPeriodsFunctions,self.allPeriodsWeightedFunctions,self.periodSets,self.allNbDaysInPeriod,self.storageID,self.loc,'\SeasonalCosts\\')
+            writeCfOneConverterState(self.allPeriodsFunctions,self.allPeriodsWeightedFunctions,self.periodSets,self.allNbDaysInPeriod,self.storageID,self.loc,'\CostFunctions\\')
             if ref !='':
                 writeCfOneConverterState(self.allPeriodsFunctions,self.allPeriodsWeightedFunctions,self.periodSets,self.allNbDaysInPeriod,self.storageID,self.loc,'\\'+ref+'\\')
 
@@ -389,16 +400,16 @@ class costFunctions:
     def readCf(self, ref):
 
         if self.converterState: 
-            output=readCfOneConverterState(self.nbPeriods,self.periodSizes,self.loc,'\\'+ref+'_On\\')
+            output=readCfOneConverterState(self.nbPeriods,self.periodSizes,self.loc,ref+'-On\\')
             self.allPeriodsFunctions=output[0]
-            self.allPeriodsWeightedFunctions=output[1]
-            output=readCfOneConverterState(self.nbPeriods,self.periodSizes,self.loc,'\\'+ref+'_Off\\')
+            # self.allPeriodsWeightedFunctions=output[1]
+            output=readCfOneConverterState(self.nbPeriods,self.periodSizes,self.loc,ref+'-Off\\')
             self.allPeriodsFunctionsOff=output[0]
-            self.allPeriodsWeightedFunctionsOff=output[1]
+            # self.allPeriodsWeightedFunctionsOff=output[1]
         else:   
-            output=readCfOneConverterState(self.nbPeriods,self.periodSizes,self.loc,'\\'+ref+'\\')
+            output=readCfOneConverterState(self.nbPeriods,self.periodSizes,self.loc,ref+'\\')
             self.allPeriodsFunctions=output[0]
-            self.allPeriodsWeightedFunctions=output[1]
+            # self.allPeriodsWeightedFunctions=output[1]
                    
         
     def showCf(self, periodSet=0, period=0, absTimeStep=-1, converterState='on'):
@@ -462,8 +473,7 @@ def writeRp(dataPersee, Rp, noRp, seriesToConsider, dt, locDataPersee, name):
     
     df.to_csv(path_or_buf=locDataPersee+name,sep=';',decimal='.',header=False, index=False)   
     
-def extrapolateCfOneConverterState(allPeriodsFunctions,periodSets,configuration,absTolerance=5):
-    timeShift=float(configuration.findParamValue('<timeshift>',ignoreComments=True))
+def extrapolateCfOneConverterState(allPeriodsFunctions,periodSets,timeshift,absTolerance=5):
 
     ##################### 5) extrapolation of the cost fonctions for each weighted combination of two periods: building the 'mixed curves'
     
@@ -472,7 +482,7 @@ def extrapolateCfOneConverterState(allPeriodsFunctions,periodSets,configuration,
 		
     for periodSet in range(len(allPeriodsFunctions)):
         allWeightedFunctions=[]
-        nbDaysInPeriod=int(len(periodSets[periodSet][0])/timeShift)
+        nbDaysInPeriod=int(len(periodSets[periodSet][0])/timeshift)
         allNbDaysInPeriod.append(nbDaysInPeriod)
 
         for period in range(len(allPeriodsFunctions[periodSet])):
@@ -675,7 +685,7 @@ def writeCfOneConverterState(allPeriodsFunctions,allPeriodsWeightedFunctions,per
             plt.scatter(pt[0],pt[1])
             
             header=[storageID+'.deltaSetPoint',storageID+'.costSetPoint'] 
-            name='SeasonalStorage_file_'+str(len(periodSets[periodSet][0]))+'_'+str(period+1)+'.csv' 
+            name='Cf_'+str(len(periodSets[periodSet][0]))+'_'+str(period+1)+'.csv' 
             df=pd.DataFrame(np.array(originalPoints), columns=header)
             df.to_csv(path_or_buf=loc+folder+name,sep=';',decimal='.',header=True, index=False) 
             
@@ -701,7 +711,7 @@ def writeCfOneConverterState(allPeriodsFunctions,allPeriodsWeightedFunctions,per
                 plt.scatter(pt[0],pt[1])
     
                 header=[storageID+'.deltaSetPoint',storageID+'.costSetPoint'] 
-                name='SeasonalStorage_file_'+str(len(periodSets[periodSet][0]))+'_'+str(period)+'-'+str(allNbDaysInPeriod[periodSet]-coef)+'_'+str(nextPeriod)+'-'+str(coef)+'.csv' 
+                name='Cf_'+str(len(periodSets[periodSet][0]))+'_'+str(period)+'-'+str(allNbDaysInPeriod[periodSet]-coef)+'_'+str(nextPeriod)+'-'+str(coef)+'.csv' 
                                     
                 df=pd.DataFrame(np.array(points), columns=header)
                 df.to_csv(path_or_buf=loc+folder+name,sep=';',decimal='.',header=True, index=False) 
@@ -724,7 +734,7 @@ def readCfOneConverterState(nbPeriods,periodSizes,loc,folder):
         #original cost functions
         for period in range(nbPeriods[periodSet]):
             allPeriodsFunctions[periodSet].append([])
-            name='\\SeasonalStorage_file_'+str(int(periodSizes[periodSet]))+'_'+str(period+1)+'.csv' 
+            name='\\Cf_'+str(int(periodSizes[periodSet]))+'_'+str(period+1)+'.csv' 
             df=pd.read_csv(loc+name,sep=";", decimal=".")
 
             points=np.array(df)
@@ -747,7 +757,7 @@ def readCfOneConverterState(nbPeriods,periodSizes,loc,folder):
             for coef in range(int(periodSizes[periodSet]/24)):
                 allPeriodsWeightedFunctions[periodSet][period].append([])
                 
-                name='SeasonalStorage_file_'+str(int(periodSizes[periodSet]))+'_'+str(period)+'-'+str(int(periodSizes[periodSet]/24)-coef)+'_'+str(nextPeriod)+'-'+str(coef)+'.csv' 
+                name='Cf_file_'+str(int(periodSizes[periodSet]))+'_'+str(period)+'-'+str(int(periodSizes[periodSet]/24)-coef)+'_'+str(nextPeriod)+'-'+str(coef)+'.csv' 
                 df=pd.read_csv(loc+folder+name,sep=";", decimal=".")
 
                 points=np.array(df)
