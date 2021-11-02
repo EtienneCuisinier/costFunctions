@@ -10,21 +10,24 @@ class representativePeriods:
         For now, the extended model is not included in the code.
         The class is composed of the following attributes:
             
-            Initialization parameters: 
+            Initialization mandatory parameters: 
             - a list of the original data sets (lists) to compress (must have the same length, the length must be a multiple of 24/dt): data
-            - the time step size (in hours): dt
             - the number of representative periods to build: nRP
             - the size of the representative periods to build (expressed as a number of days): sRP
-            - the number of bins to consider (methodological parameter, 40 by default): nBins 
-            - the solving time limit (1 minute by default): timeLimit
-            - the gap tolerance (maximum objective difference between the optimal solution and the obtained solution, 0.1% by default): gap
-            - the bin construction method (1 by default): binMethod (changes the step definition)
-            - optional representative period imposed by the user (a list of period numbers): imposedPeriod
-            - optional peak representative periods for each data sets, defined for representative days only (for instance, [0,-1,1] means: [no period imposed,impose the period with lowest value, imposed the period with highest value]): imposePeak
-            - the rebuild method: rebuildMethod ('basic' by default, or 'squared' or 'durationCurve')
-            - weigths on the input data sets: all sets are normalised when accounting for errors on duration curves or when rebuilding the whole data set. Weights can be attributed.
+            
+            Initialization optional parameters: 
 
-            Other parameters and ouputs:
+            - the time step size (in hours): dt
+            - weigths on the input data sets: all sets are normalised when accounting for errors on duration curves or when rebuilding the whole data set. Weights can be attributed.
+            - optional representative period imposed by the user (a list of period numbers): imposedPeriods
+            - optional peak representative periods for each data sets, defined for representative days only (for instance, [0,-1,1] means: [no period imposed,impose the period with lowest value, imposed the period with highest value]): imposePeak
+            - the gap tolerance (maximum objective difference between the optimal solution and the obtained solution, 0.1% by default): gap
+            - the solving time limit (1 minute by default): timeLimit
+            - the number of bins to consider (methodological parameter, 40 by default): nBins 
+            - the bin construction method (1 by default): binMethod (changes the step definition)
+            - the rebuild method: rebuildMethod ('basic' by default, or 'squared' or 'durationCurve')
+
+            Internal parameters and ouputs:
             - the number of data sets: nbSets
             - the number of time steps: nbPdt
             - the number of optional representative periods: nORP
@@ -40,10 +43,10 @@ class representativePeriods:
             - the selected periods (1 if selected, 0 otherwise): optSelPeriods
             - the selected periods, number of selected periods: optSelPeriodsCompact
             - the optimised selected periods per time step: optSelPeriodsDt
-            - the optimised error on data: optError
-            - the optimised total error: optErrorTot
+            - the optimised error on data (see Poncelet K. & al., "error_c,b"): optError
+            - the optimised total error (see Poncelet K. & al.): optErrorTot
             - the rebuilt data sets from selected representative periods: rebuiltData
-            - the linking matrix: lMatrix
+            - the linking matrix (attribution of one representative period to each original period): lMatrix
             - the indexes of representative periods used to rebuild data sets (per optional representative period): rpUse
             - the indexes of representative periods used to rebuild data sets (per time step): rpUseHourly
             - the error on the rebuilt data: errorRebuiltData
@@ -55,8 +58,11 @@ class representativePeriods:
     
  
     
-    def __init__(self, data, dt, nRP, sRP, nBins=40, timeLimit=60, gap=0.001, threads=0, imposedPeriod=[], imposePeak=[], binMethod=1, weightsOnDataSets=[]):
-        
+    def __init__(self, data, nRP, sRP, dt=1, 
+                 weightsOnDataSets=[], imposedPeriods=[], imposePeak=[], 
+                 gap=0.01, timeLimit=300, threads=8, 
+                 nBins=40,binMethod=1,rebuildMethod='basic'):
+                
         try: data[0][0]
         except: data=[data]     
         
@@ -81,11 +87,13 @@ class representativePeriods:
             setBins=set(range(nBins))
             totWeight=nbPdt / sRPh
         
+            #parametres pour construire le probleme d'optimisation
             for i in range(nbSets):
                 bins.append(buildBins(data[i],nBins,binMethod))
                 paramL.append(buildL(data[i],nBins, sRPh,binMethod))
                 paramAA.append(buildAA(data[i],nBins,sRPh,dt,binMethod))
             
+            #recherche du pic sur chaque serie si l'option est activee
             for i in range(len(imposePeak)):
                 if imposePeak[i] == 1:
                     peaks.append(int( data[i].index(max(data[i])) / sRPh ))
@@ -97,7 +105,7 @@ class representativePeriods:
         except:
             print('ERROR when building parameters')
         
-        #model
+        #model MILP
         mdl = Model(name='representPeriods')
         mdl.parameters.mip.tolerances.mipgap=gap            
         mdl.set_time_limit(float(timeLimit))  
@@ -135,8 +143,8 @@ class representativePeriods:
             for j in setORP:
                 mdl.add_constraint( weights[j] <= selected[j]*totWeight)
       
-            for i in range(len(imposedPeriod)):
-                mdl.add_constraint( selected[imposedPeriod[i]] == 1 )
+            for i in range(len(imposedPeriods)):
+                mdl.add_constraint( selected[imposedPeriods[i]] == 1 )
             
             if len(imposePeak)>0:
                 for n in range(len(peaks)):
@@ -161,7 +169,6 @@ class representativePeriods:
     
     
         try:
-            print('Solving MILP ... ')
             mdl.solve()
         except:
             print('Error when solving problem')
@@ -178,16 +185,17 @@ class representativePeriods:
             optSelPeriodsCompact = [i for i in setORP if selected[i].solution_value == 1]
 
             optWeightsCompact = [weights[w].solution_value for w in setORP]
-            while len(optWeightsCompact) > nRP: #pour supprimer les valeurs negligeables
-                optWeightsCompact.remove(min(optWeightsCompact))
+            
+            
+            while len(optWeightsCompact) > nRP: 
+                optWeightsCompact.remove(min(optWeightsCompact)) #pour supprimer les valeurs negligeables
             
             optWeights = [weights[w].solution_value for w in setORP]
-            optError = [[]]
+            optError = []
             optErrorTot = []
             
             for n in range(nbSets):
-                if n > 0:
-                    optError.append([])
+                optError.append([])
                 for i in setBins:
                     optError[n].append(error[n][i].solution_value)
             
@@ -256,7 +264,7 @@ class representativePeriods:
             self.nBins=nBins
             self.timeLimit=timeLimit
             self.gap=gap
-            self.imposedPeriod=imposedPeriod
+            self.imposedPeriods=imposedPeriods
             self.imposePeak=imposePeak
             self.binMethod=binMethod
 
@@ -305,7 +313,7 @@ class representativePeriods:
                 plt.plot(dcData, label="dc original")
                 plt.plot(dcRp, label="dc representative periods")
                 plt.xlabel('Time')
-                plt.ylabel('Power')
+                plt.ylabel('Unit')
                 plt.legend()
                 plt.show()
                 
@@ -322,13 +330,13 @@ class representativePeriods:
     
                     plt.plot(self.rpList[i][j])
                     plt.xlabel('Time')
-                    plt.ylabel('Power')
+                    plt.ylabel('Unit')
                     plt.title("representative period "+str(j)+" with weight = "+str(round(self.optWeightsCompact[j],2)))
                     plt.show()
                     
                 plt.plot(self.data[i])
                 plt.xlabel('Time')
-                plt.ylabel('Power')
+                plt.ylabel('Unit')
                 plt.title("Original data")
                 plt.show()
             
