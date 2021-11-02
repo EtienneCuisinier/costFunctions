@@ -72,13 +72,13 @@ def test_costFunctions():
     cf=costFunctions(periodSizes, seriesToConsider,
                      loc, nameData, nameConfig, nameSettings, namePLAN, nameFbsfLog, nameSortie, 
                      storageID, lossesID, efficiencyID, initSocID, finalSocID, capacityID, powerID, costID, 
-                     nbTimeStepsForComputations, dt)
+                     nbTimeStepsForComputations, dt, converterState)
 
     cf.computeRp(nRP, sRP, weights, imposedPeriods, imposePeak, gapRp, timeLimitRp, threadsRp, nBins, binMethod)
 
     cf.defineStorageLevelDeltas(nbPoints, maxStorageDeltaPerPeriod)
 
-    cf.computeCf(nameBatch, gap, timeLimit, initSOC, converterState, converterID, absInitialStateID)    
+    cf.computeCf(nameBatch, gap, timeLimit, initSOC, converterID, absInitialStateID)    
 
     cf.extrapolateCf()
 
