@@ -108,7 +108,7 @@ class dataList:
             Ouput : True ou False
         """
         output = False
-        if self.ext == '.xml' or self.ext == '.oplproject':
+        if self.ext == '.xml':
             if '<!--' in self.data[index]:
                 output=True;     
         elif self.ext == '.ini':
@@ -136,7 +136,7 @@ class dataList:
     def findParam(self,param,start=0, ignoreComments=True, warning=True, reverseSearch=False):
         """Methode pour trouver un parametre dans l'attribut 'data'
             Input : le nom du parametre, le numero de ligne a partir duquel chercher le parametre (optionnel, utile si ce parametre apparait plusieurs fois), 
-                    si l'on souhaite ignorer les lignes commentees ou non (initialise a 'True', pour les fichiers .ini, .xml, .dat et .oplproject)
+                    si l'on souhaite ignorer les lignes commentees ou non (initialise a 'True', pour les fichiers .ini, .xml, .dat)
             Ouput : [le numero de la ligne qui contient le parametre, la ligne complete qui contient le parametre]
         """
         output = [-1,'notFound']
@@ -221,14 +221,16 @@ class dataList:
         return output
 
     def changeParamValue(self, param, new, start=0, ignoreComments=True):
-        """Methode pour changer la valeur d'un parametre dans l'attribut 'data', definie pour les fichiers .ini, .xml, .dat et .oplproject (OPL)
+        """Methode pour changer la valeur d'un parametre dans l'attribut 'data', definie pour les fichiers .ini, .xml, .dat
             Input : le nom du parametre, le numero de ligne a partir duquel chercher le parametre (optionnel, utile si ce parametre apparait plusieurs fois), 
                     si l'on souhaite ignorer les lignes commentees ou non (initialise a 'True', pour les fichiers .ini, .xml)
             Ouput : 
         """
         line=self.findParam(param, start, ignoreComments)
-       
+        output=False
+        
         if line[1] !='notFound':
+            output=True
             if self.ext == '.xml':
                 
                 index1=line[1].index('>')
@@ -257,24 +259,22 @@ class dataList:
                 index=line[1].index('=')
                 self.data[line[0]]=line[1][:index+1]+str(new) 
                 #print("Ligne numero " + str(line[0]) + ", nouveau contenu : "+ str(self.data[line[0]]))
-            
-            elif self.ext == '.oplproject':
-                index1=line[1].index('"')
-                index2=line[1].index('"',index1+1, len(line[1]))
-                self.data[line[0]]=line[1][:index1+1]+str(new)+line[1][index2:]
-                #print("Ligne numero " + str(line[0]) + ", nouveau contenu : "+ str(self.data[line[0]]))
-        
+                  
             else :
-                print("changeParamValue : Nom de l'extention inconnu, ou non pris en charge par la fonction, ")
+                output=False
+                print("changeParamValue : Nom de l'extention inconnu, ou non pris en charge par la fonction")
+                
+        return output
     
     def commentParam(self, param, start=0, warning=False):
-        """Methode pour commenter une ligne contenant le parametre donne, definie pour les fichiers .ini, .xml, .dat et .oplproject (OPL)
+        """Methode pour commenter une ligne contenant le parametre donne, definie pour les fichiers .ini, .xml, .dat
             Input : le nom du parametre, le numero de ligne a partir duquel chercher le parametre (optionnel, utile si ce parametre apparait plusieurs fois), 
             Ouput : 
         """
         line=self.findParam(param, start, True)
-       
+        output=False
         if line[1] !='notFound':
+            output=True
             if self.ext == '.xml':
                 
                 self.data[line[0]]='<!--'+self.data[line[0]]+'-->'
@@ -291,11 +291,13 @@ class dataList:
                 print("Ligne numero " + str(line[0]) + ", commentee.")        
 
             else :
-                print("commentParam : Nom de l'extention inconnu, ou non pris en charge par la fonction, ")
+                output=False
+                print("commentParam : Nom de l'extention inconnu, ou non pris en charge par la fonction")
 
         else : 
             if warning:
-                print("Parametre introuvable, ou ligne deja commentee.")	   
+                print("Parametre introuvable, ou ligne deja commentee.")	
+        return output
  
     def clean(self, full=False, breakXml = False, ignoreComments=False):
         """Methode pour 'nettoyer' l'attribut 'data': supprime les blancs et les lignes commentees, definie pour les fichiers .ini, .xml, .dat (OPL)
@@ -545,7 +547,7 @@ class dataList:
                 
     #Renvoie la liste des parametres du .ini que Persee interpretera comme variable de dimensionnement a optimiser (symbolise par une valeur negative)
     def changeAllParamValues(self, param, new, start=0, ignoreComments=True):
-        """Methode pour changer la valeur de tous les parametres dans l'attribut 'data', definie pour les fichiers .ini, .xml, .dat et .oplproject (OPL)
+        """Methode pour changer la valeur de tous les parametres dans l'attribut 'data', definie pour les fichiers .ini, .xml, .dat
             Input : le nom du parametre, le numero de ligne a partir duquel chercher le parametre (optionnel, utile si ce parametre apparait plusieurs fois), 
                     si l'on souhaite ignorer les lignes commentees ou non (initialise a 'True', pour les fichiers .ini, .xml)
             Ouput : 
