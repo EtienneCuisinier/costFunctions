@@ -303,7 +303,7 @@ class representativePeriods:
     def showDcRp (self,save=False,name=''):
     
         for i in range(self.nbSets):
-            if self.weightsOnDataSets[i]>0 or self.weightsOnDataSets==[]:
+            if self.weightsOnDataSets==[] or self.weightsOnDataSets[i]>0:
                 print ('Showing duration curves for data['+str(i)+']')
                 
                 print ('Compare duration curve of original data with (approximated) duration curve of selected representative periods (weighted)')
@@ -324,10 +324,10 @@ class representativePeriods:
     def showRp (self):
 
         for i in range(self.nbSets):
-            if self.weightsOnDataSets[i]>0 or self.weightsOnDataSets==[]:
+            if self.weightsOnDataSets==[] or self.weightsOnDataSets[i]>0 :
                 print ('Showing representative period(s) for data['+str(i)+']')
                     
-                for j in range( len(self.rpList[i])):
+                for j in range(len(self.rpList[i])):
     
                     plt.plot(self.rpList[i][j])
                     plt.xlabel('Time')
@@ -344,7 +344,7 @@ class representativePeriods:
     def showDcRebuiltData (self,save=False, name=''):
     
         for i in range(self.nbSets):
-            if self.weightsOnDataSets[i]>0 or self.weightsOnDataSets==[]:
+            if self.weightsOnDataSets==[] or self.weightsOnDataSets[i]>0:
                 print ('Showing duration curves for data['+str(i)+']')
                 
                 print ('Compare duration curve of original data with (approximated) duration curve of rebuilt data')
@@ -355,7 +355,7 @@ class representativePeriods:
                 plt.plot(dcOriginal, label="data original")
                 plt.plot(dcRebuilt, label="rebuilt data")
                 plt.xlabel('Time')
-                plt.ylabel('Power')
+                plt.ylabel('Units')
                 plt.legend()
                 plt.show()
                 
@@ -365,7 +365,7 @@ class representativePeriods:
     def showRebuiltData (self,save=False, name=''):
     
         for i in range(self.nbSets):
-            if self.weightsOnDataSets[i]>0 or self.weightsOnDataSets==[]:
+            if self.weightsOnDataSets==[] or self.weightsOnDataSets[i]>0:
                 print ('For data['+str(i)+']')
                 
                 print ('Compare duration curve of original data with duration curve of rebuilt data')
@@ -373,7 +373,7 @@ class representativePeriods:
                 plt.plot(self.data[i], label="data original")
                 plt.plot(self.rebuiltData[i], label="rebuilt data")
                 plt.xlabel('Time')
-                plt.ylabel('Power')
+                plt.ylabel('Units')
                 plt.legend()
                 plt.show()
                 
