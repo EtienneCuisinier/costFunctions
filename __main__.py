@@ -70,9 +70,9 @@ def test_costFunctions():
         
     #Building cost functions
     cf=costFunctions(periodSizes, seriesToConsider,
-                     loc, nameData, nameConfig, nameSettings, namePLAN, nameFbsfLog, nameSortie, 
-                     storageID, lossesID, efficiencyID, initSocID, finalSocID, capacityID, powerID, costID, 
-                     nbTimeStepsForComputations, dt, converterState)
+                 loc, nameData, nameConfig, nameSettings, nameDesc, namePLAN, nameFbsfLog, nameSortie, 
+                 storageID, lossesID, efficiencyID, initSocID, finalSocID, capacityID, powerID, costID, 
+                 nbTimeStepsForComputations, dt, converterState)
 
     cf.computeRp(nRP, sRP, weights, imposedPeriods, imposePeak, gapRp, timeLimitRp, threadsRp, nBins, binMethod)
 
