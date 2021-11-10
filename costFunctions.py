@@ -16,7 +16,7 @@ plt.style.use('seaborn-whitegrid')
 class costFunctions:
         
     def __init__(self, periodSizes, seriesToConsider,
-                 loc, nameData, nameConfig, nameSettings, namePLAN, nameFbsfLog, nameSortie, 
+                 loc, nameData, nameConfig, nameSettings, nameDesc, namePLAN, nameFbsfLog, nameSortie, 
                  storageID, lossesID, efficiencyID, initSocID, finalSocID, capacityID, powerID, costID, 
                  nbTimeStepsForComputations=8736, dt=1,
                  converterState=False):
@@ -46,7 +46,7 @@ class costFunctions:
         nbTimeSteps=len(df.index)
         if (nbTimeSteps != nbTimeStepsForComputations):
             print("ERROR: expected at least " + str(nbTimeStepsForComputations) + " hours of data")
-
+            raise SystemExit
 
         ##################### 1) Cutting the data series into periods 
         try: periodSizes[0]
@@ -64,6 +64,7 @@ class costFunctions:
             
             if nbPeriods % 1 > 0:
                 print("ERROR: the number of time steps in the data series used for computations must be a multiple of the periodSizes ")
+                raise SystemExit
             else:    
                 nbPeriods=int(nbPeriods)
                 listPeriods=[]
@@ -88,6 +89,7 @@ class costFunctions:
         self.nameData=nameData
         self.nameConfig=nameConfig
         self.nameSettings=nameSettings
+        self.nameDesc=nameDesc
         self.namePLAN=namePLAN
         self.nameFbsfLog=nameFbsfLog
         self.nameSortie=nameSortie
@@ -121,7 +123,7 @@ class costFunctions:
         
         ##################### 2) Building representative period(s) for each period
         for periodSet in range(len(self.periodSets)):
-            current=[]
+            periodsRp=[]
             for period in range(len(self.periodSets[periodSet])):     
                 #Formating
                 data=[]
@@ -139,13 +141,16 @@ class costFunctions:
                 else:
                     rp=representativePeriods(data, nRP, sRP, self.dt, weights, imposedPeriods, imposePeak, gapRp, timeLimitRp, threadsRp, nBins, binMethod)
                      
-                current.append(rp)
+                periodsRp.append(rp)
                 
-            allPeriodsRp.append(current)
+            allPeriodsRp.append(periodsRp)
         
         self.allPeriodsRp=allPeriodsRp
         self.nRP=nRP
         self.sRP=sRP
+        
+        # allPeriodsRp[0][0].showRp()
+        # allPeriodsRp[0][0].showDcRp()
         
     def defineStorageLevelDeltas(self, nbPoints=20, maxStorageDeltaPerPeriod=1):
         try: maxStorageDeltaPerPeriod[0]
@@ -160,6 +165,7 @@ class costFunctions:
         
         if powerSto <= 0:
             print("ERROR: the maximum power of the storage must be > 0 !")
+            raise SystemExit
         else:
             granularity=1/nbPoints
             deltas=[]
@@ -182,6 +188,9 @@ class costFunctions:
         
         allPeriodsFunctions=[]
         allPeriodsFunctionsOff=[]
+        periodSet=0
+        period=0
+        noRp=0
             
         ##################### 4) Computation of cost functions
         for periodSet in range(len(self.allPeriodsRp)):
@@ -193,20 +202,25 @@ class costFunctions:
             dataPersee=np.genfromtxt(self.loc+self.nameData, delimiter=';', dtype=str)
             dataPersee[0].tolist()
             
-            #modification of the Persee configuration file
+            #modification of the Persee files
+            structure=dataList(self.nameDesc,self.loc)
+            settings=dataList(self.nameSettings,self.loc)
+            
             self.configuration.changeParamValue('futursize', str(len(self.allPeriodsRp[periodSet][0].rpList[0][0]))) 
             self.configuration.changeParamValue('pastsize', '24') 
             self.configuration.changeParamValue('timeshift', '24') 
             self.configuration.changeParamValue('CycleStop', '1') 
-            self.configuration.commentParam('<TimeStepFile>') 
-            self.configuration.commentParam('<ComputationFuturSize>') 
-        
-            #modification of the Persee settings file
-            settings=dataList(self.nameSettings,self.loc)
+            while self.configuration.commentParam('<TimeStepFile>'):pass
+            while self.configuration.commentParam('<ComputationFuturSize>'):pass
+            while self.configuration.commentParam('<MyTypicalPeriod>'):pass
+            while structure.commentParam('<UseProfileLoadFluxSeasonal>'):pass
+            while structure.commentParam('<UseProfileBuyPriceSeasonal>'):pass
+            while structure.commentParam('<UseGridCarbonContentSeasonal>'):pass
             settings.changeParamValue('Cplex.Gap', gap) 
             settings.changeParamValue('Cplex.TimeLimit', timeLimit) 
             settings.changeParamValue(self.storageID+self.lossesID, '0.') #losses are already considered when in the MILP model using the cost functions
-                       
+            settings.changeAllParamValues("SeasonalPrevisions",'false')
+
             costs=[]
             costsOff=[]
 
@@ -244,27 +258,30 @@ class costFunctions:
                     weightedCostsOff=[]
                     ignoredPointWeights=[] #if one of the representative period yield an unfeasible problem, its weight is recorded to further ajust the final cost 
 
-                    for rp in range(self.allPeriodsRp[periodSet][period].nRP):
-                        name='representativePeriods/'+self.nameData+'_'+str(self.allPeriodsRp[periodSet][period].nbPdt)+'_period'+str(period)+'_rp'+str(rp)+'.csv'
-                        self.configuration.changeParamValue(self.nameData, './'+name)
-            
+                    for noRp in range(self.allPeriodsRp[periodSet][period].nRP):
+                        name='representativePeriods/'+self.nameData+'_'+str(self.allPeriodsRp[periodSet][period].nbPdt)+'_period'+str(period)+'_rp'+str(noRp)+'.csv'
+                        if not self.configuration.changeParamValue(self.nameData, './'+name):
+                            print('ERROR: the following parameter was not changed: '+self.nameData)
+                            raise SystemExit
+
                         #writing Persee files
                         settings.writeFile()
                         self.configuration.writeFile()
-            
+                        structure.writeFile()
+                        
                         #running Persee
                         timeSimulation=runPerseeBatch(self.loc,nameBatch,self.nameFbsfLog)
                     
                         #looking for unfeasible problem
                         if timeSimulation==-2: 
-                            ignoredPointWeights.append(self.allPeriodsRp[periodSet][period].optWeightsCompact[rp])
+                            ignoredPointWeights.append(self.allPeriodsRp[periodSet][period].optWeightsCompact[noRp])
             
                         else: 
                             #reading results
                             resultsFile=dataList(self.namePLAN,self.loc)
                             originalCost=float(resultsFile.findParamValue(self.costID,ignoreComments=False)) 
                             
-                            cost=originalCost*self.allPeriodsRp[periodSet][period].optWeightsCompact[rp]
+                            cost=originalCost*self.allPeriodsRp[periodSet][period].optWeightsCompact[noRp]
                             
                             #if the initial state of the converter has an important side effect on the operational cost 
                             #both initial state cases are computed to build two cost functions (and so that the cost to change the state is accounted only once)
@@ -273,15 +290,13 @@ class costFunctions:
                                 #the other starting point is computed, if the obtained cost is inferior, both results are weighted
                                 settings.changeParamValue(converterID+absInitialStateID, '0')
                                 settings.writeFile()
-                                
                                 #running Persee
                                 # print("relaunch with new initial state")
                                 timeSimulation=runPerseeBatch(self.loc,nameBatch,self.nameFbsfLog)
-
                                 #back to the original state
                                 settings.changeParamValue(converterID+absInitialStateID, '1')
                                 settings.writeFile()
-                                
+
                                 #ignoring unfeasible problem
                                 if timeSimulation != -2: 
                                     resultsFile=dataList(self.namePLAN,self.loc)
@@ -290,19 +305,19 @@ class costFunctions:
                                     #results are weighted so that the cost to change the state is accounted only once
                                     totalWeight=sum(self.allPeriodsRp[periodSet][period].optWeightsCompact)
                                     if originalCostOff < originalCost:
-                                        cost=(originalCost + originalCostOff*(1/ratio-1))*self.allPeriodsRp[periodSet][period].optWeightsCompact[rp]/totalWeight
-                                        costOff=originalCostOff*self.allPeriodsRp[periodSet][period].optWeightsCompact[rp]
+                                        cost=(originalCost + originalCostOff*(1/ratio-1))*self.allPeriodsRp[periodSet][period].optWeightsCompact[noRp]/totalWeight
+                                        costOff=originalCostOff*self.allPeriodsRp[periodSet][period].optWeightsCompact[noRp]
                                     else:
-                                        cost=originalCost*self.allPeriodsRp[periodSet][period].optWeightsCompact[rp]
-                                        costOff=(originalCostOff + originalCost*(1/ratio-1))*self.allPeriodsRp[periodSet][period].optWeightsCompact[rp]/totalWeight   
+                                        cost=originalCost*self.allPeriodsRp[periodSet][period].optWeightsCompact[noRp]
+                                        costOff=(originalCostOff + originalCost*(1/ratio-1))*self.allPeriodsRp[periodSet][period].optWeightsCompact[noRp]/totalWeight   
                             
                             weightedCosts.append(cost)
                             if self.converterState:
                                 weightedCostsOff.append(costOff)
-                            #     print("representative period "+str(rp)+" done, ON state, cost = "+str(cost)+", with weight = "+str(self.allPeriodsRp[periodSet][period].optWeightsCompact[rp]))
-                            #     print("representative period "+str(rp)+" done, OFF state, cost = "+str(costOff)+", with weight = "+str(self.allPeriodsRp[periodSet][period].optWeightsCompact[rp]))
+                            #     print("representative period "+str(noRp)+" done, ON state, cost = "+str(cost)+", with weight = "+str(self.allPeriodsRp[periodSet][period].optWeightsCompact[rp]))
+                            #     print("representative period "+str(noRp)+" done, OFF state, cost = "+str(costOff)+", with weight = "+str(self.allPeriodsRp[periodSet][period].optWeightsCompact[rp]))
                             # else:
-                            #     print("representative period "+str(rp)+" done, cost = "+str(cost)+", with weight = "+str(self.allPeriodsRp[periodSet][period].optWeightsCompact[rp]))
+                            #     print("representative period "+str(noRp)+" done, cost = "+str(cost)+", with weight = "+str(self.allPeriodsRp[periodSet][period].optWeightsCompact[rp]))
 
                     #summing weighted costs, ajustement made if some costs were ignored due to computation failures
                     if (len(ignoredPointWeights)==0 or (len(ignoredPointWeights)>0 and len(ignoredPointWeights)<self.allPeriodsRp[periodSet][period].nRP)):
@@ -311,10 +326,9 @@ class costFunctions:
                         sumCosts=sum(weightedCosts)*coefAdjustWeights
                         originalPoints.append([self.deltas[periodSet][period][point],sumCosts])
                         
-                        sumCostsOff=sum(weightedCostsOff)*coefAdjustWeights
-                        originalPointsOff.append([self.deltas[periodSet][period][point],sumCostsOff])
-
                         if self.converterState:
+                            sumCostsOff=sum(weightedCostsOff)*coefAdjustWeights
+                            originalPointsOff.append([self.deltas[periodSet][period][point],sumCostsOff])
                             print("Storage delta = ",self.deltas[periodSet][period][point], " done, corresponding cost (converter ON) = ", str(sumCosts))
                             print("Storage delta = ",self.deltas[periodSet][period][point], " done, corresponding cost (converter OFF) = ", str(sumCostsOff))
                         else:
@@ -325,9 +339,7 @@ class costFunctions:
                     
                     # if sumCosts==0 and sumCostsOff==0: #stopping computations if costs are null
                     #     break
-                    if period==100:
-                        break
-                    
+
                 originalPoints.reverse()
                 originalPointsOff.reverse()
                 costs.append(originalPoints)
@@ -339,6 +351,8 @@ class costFunctions:
         #restoring Persee files     
         settings.reinitData()
         settings.writeFile()
+        structure.reinitData()
+        structure.writeFile()
         self.configuration.reinitData()
         self.configuration.writeFile()
 
@@ -364,20 +378,20 @@ class costFunctions:
         timeTot=time.perf_counter() - timeStart
         print("Costs extrapolation, total computation time: ",timeTot," seconds")
                 
-    def writeCf(self,ref=''):
+    def writeCf(self,ref='',saveExtrapolated=False):
         
         if self.converterState:                      
-            writeCfOneConverterState(self.allPeriodsFunctions,self.allPeriodsWeightedFunctions,self.periodSets,self.allNbDaysInPeriod,self.storageID,self.loc,'\CostFunctions-On\\')
+            writeCfOneConverterState(self.allPeriodsFunctions,self.allPeriodsWeightedFunctions,self.periodSets,self.allNbDaysInPeriod,self.storageID,self.loc,'\CostFunctions_On\\')
             writeCfOneConverterState(self.allPeriodsFunctions,self.allPeriodsWeightedFunctions,self.periodSets,self.allNbDaysInPeriod,self.storageID,self.loc,'\CostFunctions\\')
-            writeCfOneConverterState(self.allPeriodsFunctionsOff,self.allPeriodsWeightedFunctionsOff,self.periodSets,self.allNbDaysInPeriod,self.storageID,self.loc,'\CostFunctions-Off\\')
+            writeCfOneConverterState(self.allPeriodsFunctionsOff,self.allPeriodsWeightedFunctionsOff,self.periodSets,self.allNbDaysInPeriod,self.storageID,self.loc,'\CostFunctions_Off\\')
             if ref !='':
-                writeCfOneConverterState(self.allPeriodsFunctions,self.allPeriodsWeightedFunctions,self.periodSets,self.allNbDaysInPeriod,self.storageID,self.loc,'\\'+ref+'-On\\')
-                writeCfOneConverterState(self.allPeriodsFunctionsOff,self.allPeriodsWeightedFunctionsOff,self.periodSets,self.allNbDaysInPeriod,self.storageID,self.loc,'\\'+ref+'-Off\\')
+                writeCfOneConverterState(self.allPeriodsFunctions,self.allPeriodsWeightedFunctions,self.periodSets,self.allNbDaysInPeriod,self.storageID,self.loc,'\\'+ref+'_On\\',saveExtrapolated)
+                writeCfOneConverterState(self.allPeriodsFunctionsOff,self.allPeriodsWeightedFunctionsOff,self.periodSets,self.allNbDaysInPeriod,self.storageID,self.loc,'\\'+ref+'_Off\\',saveExtrapolated)
                 
         else:
             writeCfOneConverterState(self.allPeriodsFunctions,self.allPeriodsWeightedFunctions,self.periodSets,self.allNbDaysInPeriod,self.storageID,self.loc,'\CostFunctions\\')
             if ref !='':
-                writeCfOneConverterState(self.allPeriodsFunctions,self.allPeriodsWeightedFunctions,self.periodSets,self.allNbDaysInPeriod,self.storageID,self.loc,'\\'+ref+'\\')
+                writeCfOneConverterState(self.allPeriodsFunctions,self.allPeriodsWeightedFunctions,self.periodSets,self.allNbDaysInPeriod,self.storageID,self.loc,'\\'+ref+'\\',saveExtrapolated)
 
     def showRp(self, periodSet=0, period=-1, rebuildMethod='basic'):
         
@@ -400,10 +414,10 @@ class costFunctions:
     def readCf(self, ref):
 
         if self.converterState: 
-            output=readCfOneConverterState(self.nbPeriods,self.periodSizes,self.loc,ref+'-On\\')
+            output=readCfOneConverterState(self.nbPeriods,self.periodSizes,self.loc,ref+'_On\\')
             self.allPeriodsFunctions=output[0]
             # self.allPeriodsWeightedFunctions=output[1]
-            output=readCfOneConverterState(self.nbPeriods,self.periodSizes,self.loc,ref+'-Off\\')
+            output=readCfOneConverterState(self.nbPeriods,self.periodSizes,self.loc,ref+'_Off\\')
             self.allPeriodsFunctionsOff=output[0]
             # self.allPeriodsWeightedFunctionsOff=output[1]
         else:   
@@ -541,7 +555,9 @@ def extrapolateCfOneConverterState(allPeriodsFunctions,periodSets,timeshift,absT
                     head[0].append(curveHead[0][j])
                     head[1].append(curveHead[1][j])
                     j+=1
-                    if j == len(curveHead[0])-1: print('ERROR when building the head of a cost function')
+                    if j == len(curveHead[0])-1: 
+                        print('ERROR when building the head of a cost function')
+                        raise SystemExit
                     #now, j is the first point of the curve with a head that is in the core
                 
             #building the core of each curve
@@ -569,9 +585,7 @@ def extrapolateCfOneConverterState(allPeriodsFunctions,periodSets,timeshift,absT
                        
                 else:
                     print('ERROR when building the core of an extrapolated cost function')
-                    break
-                    break
-                    break 
+                    raise SystemExit
                 #now, i is the last point of the curve with a head that is in the core
     
             #if one curve if longer than the other on the left, this part is called the 'head', the rest is called the 'core'
@@ -667,12 +681,15 @@ def extrapolateCfOneConverterState(allPeriodsFunctions,periodSets,timeshift,absT
             
     return [allPeriodsWeightedFunctions,allNbDaysInPeriod]
 
-def writeCfOneConverterState(allPeriodsFunctions,allPeriodsWeightedFunctions,periodSets,allNbDaysInPeriod,storageID,loc,folder):
+def writeCfOneConverterState(allPeriodsFunctions,allPeriodsWeightedFunctions,periodSets,allNbDaysInPeriod,storageID,loc,folder,saveExtrapolated=True):
+    # if not os.path.isdir('Costs_rename\\'+folder[1:]):
+    #     os.mkdir(loc+'Costs_rename'+folder)
+    
     if not os.path.isdir(folder[1:]):
         os.mkdir(loc+folder)
-        
+    
     ##################### 6) writing cost functions for each period
-    for periodSet in range( len(allPeriodsFunctions)):
+    for periodSet in range(len(allPeriodsFunctions)):
         
         #original cost functions
         for period in range(len(allPeriodsFunctions[periodSet])):
@@ -687,37 +704,39 @@ def writeCfOneConverterState(allPeriodsFunctions,allPeriodsWeightedFunctions,per
             header=[storageID+'.deltaSetPoint',storageID+'.costSetPoint'] 
             name='Cf_'+str(len(periodSets[periodSet][0]))+'_'+str(period+1)+'.csv' 
             df=pd.DataFrame(np.array(originalPoints), columns=header)
-            df.to_csv(path_or_buf=loc+folder+name,sep=';',decimal='.',header=True, index=False) 
-            
+            # df.to_csv(loc+'Costs_rename'+folder+name,sep=';',decimal='.',header=True, index=False) 
+            df.to_csv(loc+folder+name,sep=';',decimal='.',header=True, index=False) 
+
             # plt.show()
         #plt.savefig('cost.png', dpi=1200)
         plt.show()     
-           
-		#extrapolated cost functions
-        for period in range(len(allPeriodsFunctions[periodSet])):
-            #on considere le mois courant et le prochain
-            nextPeriod=period+1
-            if period+1 >= len(allPeriodsFunctions[periodSet]):
-                nextPeriod=0
-            #coefs=range(5)
-            #coefs=range(23,28)
-            for coef in range(allNbDaysInPeriod[periodSet]):
-                points=allPeriodsWeightedFunctions[periodSet][period][coef]
-                #formating
-                pt=np.array(points)
-                pt=pt.T
-                pt=pt.tolist()
-                plt.title('Weighted points')     
-                plt.scatter(pt[0],pt[1])
-    
-                header=[storageID+'.deltaSetPoint',storageID+'.costSetPoint'] 
-                name='Cf_'+str(len(periodSets[periodSet][0]))+'_'+str(period)+'-'+str(allNbDaysInPeriod[periodSet]-coef)+'_'+str(nextPeriod)+'-'+str(coef)+'.csv' 
-                                    
-                df=pd.DataFrame(np.array(points), columns=header)
-                df.to_csv(path_or_buf=loc+folder+name,sep=';',decimal='.',header=True, index=False) 
+        
+        if saveExtrapolated:
+    		#extrapolated cost functions
+            for period in range(len(allPeriodsFunctions[periodSet])):
+                #on considere le mois courant et le prochain
+                nextPeriod=period+1
+                if period+1 >= len(allPeriodsFunctions[periodSet]):
+                    nextPeriod=0
+                #coefs=range(5)
+                #coefs=range(23,28)
+                for coef in range(allNbDaysInPeriod[periodSet]):
+                    points=allPeriodsWeightedFunctions[periodSet][period][coef]
+                    #formating
+                    pt=np.array(points)
+                    pt=pt.T
+                    pt=pt.tolist()
+                    plt.title('Weighted points')     
+                    plt.scatter(pt[0],pt[1])
+        
+                    header=[storageID+'.deltaSetPoint',storageID+'.costSetPoint'] 
+                    name='Cf_'+str(len(periodSets[periodSet][0]))+'_'+str(period)+'-'+str(allNbDaysInPeriod[periodSet]-coef)+'_'+str(nextPeriod)+'-'+str(coef)+'.csv' 
                                         
-            print('writting costs, month '+str(period)+' done')
-            #plt.savefig('cost.png', dpi=1200)
+                    df=pd.DataFrame(np.array(points), columns=header)
+                    df.to_csv(loc+folder+name,sep=';',decimal='.',header=True, index=False) 
+                    
+                print('writting costs, month '+str(period)+' done')
+                #plt.savefig('cost.png', dpi=1200)
         plt.show()
 
     #plt.savefig('cost.png', dpi=1200)
@@ -735,7 +754,7 @@ def readCfOneConverterState(nbPeriods,periodSizes,loc,folder):
         for period in range(nbPeriods[periodSet]):
             allPeriodsFunctions[periodSet].append([])
             name='\\Cf_'+str(int(periodSizes[periodSet]))+'_'+str(period+1)+'.csv' 
-            df=pd.read_csv(loc+name,sep=";", decimal=".")
+            df=pd.read_csv(loc+folder+name,sep=";", decimal=".")
 
             points=np.array(df)
             allPeriodsFunctions[periodSet][period]=points.tolist()
@@ -748,23 +767,23 @@ def readCfOneConverterState(nbPeriods,periodSizes,loc,folder):
 
         plt.show()     
                 
-		#extrapolated cost functions
-        for period in range(nbPeriods[periodSet]):
-            allPeriodsWeightedFunctions[periodSet].append([])
-            nextPeriod=period+1
-            if period+1 >= nbPeriods[periodSet]:
-                nextPeriod=0
-            for coef in range(int(periodSizes[periodSet]/24)):
-                allPeriodsWeightedFunctions[periodSet][period].append([])
+# 		#extrapolated cost functions
+#         for period in range(nbPeriods[periodSet]):
+#             allPeriodsWeightedFunctions[periodSet].append([])
+#             nextPeriod=period+1
+#             if period+1 >= nbPeriods[periodSet]:
+#                 nextPeriod=0
+#             for coef in range(int(periodSizes[periodSet]/24)):
+#                 allPeriodsWeightedFunctions[periodSet][period].append([])
                 
-                name='Cf_file_'+str(int(periodSizes[periodSet]))+'_'+str(period)+'-'+str(int(periodSizes[periodSet]/24)-coef)+'_'+str(nextPeriod)+'-'+str(coef)+'.csv' 
-                df=pd.read_csv(loc+folder+name,sep=";", decimal=".")
+#                 name='SeasonalStorage_file_'+str(int(periodSizes[periodSet]))+'_'+str(period)+'-'+str(int(periodSizes[periodSet]/24)-coef)+'_'+str(nextPeriod)+'-'+str(coef)+'.csv' 
+#                 df=pd.read_csv(loc+folder+name,sep=";", decimal=".")
 
-                points=np.array(df)
-                allPeriodsWeightedFunctions[periodSet][period][coef]=points.tolist()
-            print('reading costs, month '+str(period)+' done')
+#                 points=np.array(df)
+#                 allPeriodsWeightedFunctions[periodSet][period][coef]=points.tolist()
+#             print('reading costs, month '+str(period)+' done')
 
                  
-        plt.show()
+#         plt.show()
     
     return [allPeriodsFunctions,allPeriodsWeightedFunctions]
